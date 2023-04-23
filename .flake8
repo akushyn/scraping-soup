@@ -1,0 +1,6 @@
+[flake8]
+exclude = .git,.venv,__pycache__,migrations,venv,**/__init__.py
+
+# max line width setting
+max-line-length = 120
+
