@@ -2,13 +2,49 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from config.settings import BASE_DIR
+from movies.models import Movie
+from django.forms.models import model_to_dict
 
 
-class ScrapeMoviesService:
+class IMDBService:
 
+    MOVIES = 'movies'
+
+    def get_objects(self):
+        raise NotImplementedError
+
+    def persist_objects(self, objects):
+        raise NotImplementedError
+
+    @classmethod
+    def get_service(cls, category):
+        if category == cls.MOVIES:
+            return ScrapeMoviesService()
+        else:
+            raise NotImplementedError
+
+    def parse_poster_image(self, tag):
+        """
+        Parse image from posterColumn tag
+        :param tag:
+        :return:
+        """
+        return tag.find('img')['src']
+
+    def parse_title(self, tag):
+        return tag.find('a').text
+
+    def parse_year(self, tag):
+        return int(tag.find('span').text.lstrip('(').rstrip(')').strip())
+
+    def parse_rating(self, tag):
+        return float(tag.find('strong').text.strip())
+
+
+class ScrapeMoviesService(IMDBService):
     url = "https://www.imdb.com/chart/top"
 
-    def get_top_movies(self):
+    def get_objects(self):
         response = requests.get(self.url)
         soup = BeautifulSoup(response.content, "html.parser")
 
@@ -35,27 +71,36 @@ class ScrapeMoviesService:
             )
         return results
 
-    def parse_poster_image(self, tag):
-        """
-        Parse image from posterColumn tag
-        :param tag:
-        :return:
-        """
-        return tag.find('img')['src']
-
-    def parse_title(self, tag):
-        return tag.find('a').text
-
-    def parse_year(self, tag):
-        return int(tag.find('span').text.lstrip('(').rstrip(')').strip())
-
-    def parse_rating(self, tag):
-        return float(tag.find('strong').text.strip())
+    def persist_objects(self, objects):
+        movies = []
+        for top_movie in objects:
+            movie = (
+                Movie.objects
+                .filter(
+                    title=top_movie.get('title'),
+                    year=top_movie.get('year')
+                )
+                .first()
+            )
+            if movie:
+                movie.poster_image = top_movie.get('poster_image')
+                movie.rating = top_movie.get('rating')
+                movie.save()
+            else:
+                movie = Movie(
+                    poster_image=top_movie.get('poster_image'),
+                    title=top_movie.get('title'),
+                    year=top_movie.get('year'),
+                    rating=top_movie.get('rating'),
+                )
+                movie.save()
+            movies.append(model_to_dict(movie))
+        return movies
 
 
 if __name__ == '__main__':
-    service = ScrapeMoviesService()
-    top_movies = service.get_top_movies()
+    service = IMDBService.get_service(category=IMDBService.MOVIES)
+    top_movies = service.get_objects()
 
     df = pd.DataFrame.from_dict(top_movies)
 
